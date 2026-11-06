@@ -1,0 +1,13 @@
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*.ipynb_checkpoints/
+*Zone.Identifier
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# local-only scratch (keep the site itself)
+/tmp/
