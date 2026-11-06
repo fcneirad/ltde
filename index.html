@@ -46,18 +46,58 @@
     <div class="toolbar">
       <label>Plot:
         <select id="pg-plot">
-          <option value="scores_scatter">Scores: &chi;&sup2;<sub>offset</sub> vs contamination</option>
+          <option value="scores_scatter">Scores: &chi;&sup2;<sub>offset</sub> vs contamination / flux</option>
           <option value="lc_timeseries">Light curve (example systems)</option>
         </select>
       </label>
-      <label>Configurations:
-        <select id="pg-config" multiple size="4">
-          <option value="cross" selected>cross</option>
-          <option value="cusp" selected>cusp</option>
-          <option value="fold" selected>fold</option>
-          <option value="double" selected>double</option>
-        </select>
-      </label>
+
+      <!-- scores controls -->
+      <span id="pg-scores-controls" class="toolbar-group">
+        <label>Teams:
+          <select id="pg-teams" multiple size="4">
+            <option value="lightcurver" selected>LightCurver</option>
+            <option value="starred_v1" selected>STARRED (v1)</option>
+            <option value="heidelberg" selected>Heidelberg</option>
+            <option value="luras_v1" selected>LURAS (v1)</option>
+          </select>
+        </label>
+        <label>Geometries:
+          <select id="pg-config" multiple size="4">
+            <option value="cross" selected>cross</option>
+            <option value="cusp" selected>cusp</option>
+            <option value="fold" selected>fold</option>
+            <option value="double" selected>double</option>
+          </select>
+        </label>
+        <label>Round:
+          <select id="pg-round">
+            <option value="round1" selected>round 1</option>
+            <option value="round2">round 2</option>
+          </select>
+        </label>
+        <label>Image:
+          <select id="pg-image">
+            <option value="A" selected>A (brightest)</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+        </label>
+        <label>x-axis:
+          <select id="pg-xaxis">
+            <option value="f_cont" selected>f<sub>cont</sub> (ratio)</option>
+            <option value="f_tot">f<sub>tot</sub> (flux)</option>
+          </select>
+        </label>
+      </span>
+
+      <!-- light-curve controls -->
+      <span id="pg-lc-controls" class="toolbar-group" hidden>
+        <label>System:
+          <select id="pg-system"></select>
+        </label>
+      </span>
+
       <button id="pg-apply">Apply</button>
       <button id="pg-download" class="secondary">Download PNG</button>
     </div>

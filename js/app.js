@@ -125,13 +125,22 @@ async function loadPlaygroundData() {
   }
 }
 
-function selectedConfigs() {
-  return $$("#pg-config option:selected").map((o) => o.value);
+const TEAM_COLOR = { lightcurver: "#1f77b4", starred_v1: "#ff7f0e", heidelberg: "#2ca02c", luras_v1: "#d62728", starred_v2: "#9467bd" };
+const TEAM_LABEL = { lightcurver: "LightCurver", starred_v1: "STARRED (v1)", heidelberg: "Heidelberg", luras_v1: "LURAS (v1)", starred_v2: "STARRED (v2)" };
+
+function selectedValues(id) {
+  const el = document.getElementById(id);
+  if (!el) return [];
+  return Array.from(el.selectedOptions).map((o) => o.value);
 }
 
 async function renderPlayground() {
   await loadPlaygroundData();
   const type = $("#pg-plot").value;
+  // show the relevant control group
+  $("#pg-scores-controls").hidden = type !== "scores_scatter";
+  $("#pg-lc-controls").hidden = type !== "lc_timeseries";
+
   const area = $("#pg-plot-area");
   const status = $("#pg-status");
   if (typeof Plotly === "undefined") {
@@ -143,73 +152,92 @@ async function renderPlayground() {
 }
 
 function renderScores(area, status) {
-  if (SCORES === "missing" || !SCORES.data) {
-    status.textContent = "scores.json not found — run `make_site.py` after wiring the data paths (phase 2).";
+  if (SCORES === "missing" || !SCORES.rows) {
+    status.textContent = "scores.json not found — run `make_site.py` to export the data.";
     area.innerHTML = "";
     return;
   }
-  const cols = SCORES.columns, rows = SCORES.data;
-  const idx = (n) => cols.indexOf(n);
-  const iCfg = idx("config"), iChi = idx("chi2_offset"), iFc = idx("f_cont"), iFt = idx("f_tot");
-  const cfgs = selectedConfigs();
+  const rows = SCORES.rows;
+  const teams = selectedValues("pg-teams");
+  const geoms = selectedValues("pg-config");
+  const round = $("#pg-round").value;
+  const image = $("#pg-image").value;
+  const xkey = $("#pg-xaxis").value;   // 'f_cont' or 'f_tot'
 
-  const traces = [];
-  if (iCfg >= 0 && iChi >= 0) {
-    // left: chi2 vs f_cont (or f_tot fallback)
-    const xCol = iFc >= 0 ? iFc : iFt;
-    cfgs.forEach((c, k) => {
-      const pts = rows.filter((r) => r[iCfg] === c && r[iChi] != null && r[xCol] != null);
-      traces.push({
-        x: pts.map((r) => r[xCol]), y: pts.map((r) => r[iChi]),
-        mode: "markers", type: "scattergl", name: c,
-        marker: { size: 6, opacity: 0.7 },
-      });
-    });
-    Plotly.newPlot(area, traces, {
-      margin: { l: 55, r: 20, t: 30, b: 45 },
-      xaxis: { title: cols[xCol], type: "log" },
-      yaxis: { title: "chi2_offset", type: "log" },
-      legend: { orientation: "h", y: 1.1 },
-    }, { responsive: true });
-  } else {
-    status.textContent = "scores.json is missing the expected columns (config / chi2_offset).";
+  // filter to the chosen geometry/round/image, keep all theta_E/host/lens combos
+  const sel = rows.filter((r) => geoms.includes(r.geometry) && r.round === round && r.image === image);
+  if (sel.length === 0) {
+    status.textContent = "No data for this selection (e.g. image D does not exist for the double configuration).";
     area.innerHTML = "";
+    return;
   }
+
+  const traces = teams.map((team) => {
+    const pts = sel.filter((r) => r.team === team && r.chi2_offset != null && r[xkey] != null);
+    return {
+      x: pts.map((r) => r[xkey]), y: pts.map((r) => r.chi2_offset),
+      mode: "markers", type: "scattergl", name: TEAM_LABEL[team] || team,
+      marker: { size: 6, opacity: 0.65, color: TEAM_COLOR[team] || "#888" },
+    };
+  });
+
+  const xTitle = xkey === "f_cont" ? "f<sub>cont</sub> (image / total flux ratio)" : "f<sub>tot</sub> [flux]";
+  Plotly.newPlot(area, traces, {
+    margin: { l: 60, r: 20, t: 30, b: 50 },
+    xaxis: { title: xTitle, type: "log" },
+    yaxis: { title: "&chi;&sup2;<sub>offset</sub>", type: "log", range: [-1, 2] },
+    legend: { orientation: "h", y: 1.12 },
+    showlegend: true,
+  }, { responsive: true });
+  status.textContent = `${sel.length} points across ${geoms.join(", ")} (${round}, image ${image}).`;
 }
 
 function renderLC(area, status) {
   if (LCS === "missing" || Object.keys(LCS).length === 0) {
-    status.textContent = "lightcurves.json not found — run `make_site.py` after wiring the data paths (phase 2).";
+    status.textContent = "lightcurves.json not found — run `make_site.py` to export the data.";
     area.innerHTML = "";
     return;
   }
-  const keys = Object.keys(LCS);
+  const key = $("#pg-system").value;
+  const lc = LCS[key];
+  if (!lc) { area.innerHTML = ""; return; }
+  const ci = lc.columns.indexOf("time");
+  const t = lc.data.map((r) => r[ci]);
   const traces = [];
-  keys.forEach((k) => {
-    const lc = LCS[k];
-    const ci = lc.columns.indexOf("time");
-    if (ci < 0) return;
-    const t = lc.data.map((r) => r[ci]);
-    ["A", "B", "C", "D"].forEach((img) => {
-      const fi = lc.columns.indexOf("flux_" + img);
-      if (fi < 0) return;
-      traces.push({
-        x: t, y: lc.data.map((r) => r[fi]),
-        mode: "lines+markers", name: `${k} ${img}`, type: "scattergl",
-        marker: { size: 4 },
-      });
+  ["A", "B", "C", "D"].forEach((img) => {
+    const fi = lc.columns.indexOf("flux_" + img);
+    if (fi < 0) return;
+    traces.push({
+      x: t, y: lc.data.map((r) => r[fi]),
+      mode: "lines+markers", name: `image ${img}`, type: "scattergl", marker: { size: 4 },
     });
   });
   Plotly.newPlot(area, traces, {
-    margin: { l: 55, r: 20, t: 30, b: 45 },
+    margin: { l: 60, r: 20, t: 30, b: 50 },
     xaxis: { title: "time" }, yaxis: { title: "flux" },
-    legend: { orientation: "h", y: 1.1 },
+    legend: { orientation: "h", y: 1.12 },
   }, { responsive: true });
+  status.textContent = `${key} — ${lc.geometry}, &theta;<sub>E</sub>=${lc.theta_E}, host=${lc.host_flux}, lens=${lc.lens_flux}`;
+}
+
+function populateSystemSelect() {
+  if (LCS === null || LCS === "missing") return;
+  const sel = $("#pg-system");
+  sel.innerHTML = "";
+  Object.keys(LCS).forEach((k) => {
+    const o = document.createElement("option");
+    o.value = k; o.textContent = k;
+    sel.appendChild(o);
+  });
 }
 
 function initPlayground() {
   $("#pg-apply").addEventListener("click", renderPlayground);
   $("#pg-plot").addEventListener("change", renderPlayground);
+  ["pg-teams", "pg-config", "pg-round", "pg-image", "pg-xaxis", "pg-system"].forEach((id) => {
+    const el = document.getElementById(id);
+    if (el) el.addEventListener("change", renderPlayground);
+  });
   $("#pg-download").addEventListener("click", () => {
     const gd = $("#pg-plot-area");
     if (gd && typeof Plotly !== "undefined") Plotly.downloadImage(gd, { format: "png", filename: "ltde_plot" });
@@ -226,4 +254,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   await loadManifest();
   renderGroupFilter();
   renderGallery();
+  // pre-load playground data so the system dropdown is populated on first open
+  await loadPlaygroundData();
+  populateSystemSelect();
 });

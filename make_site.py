@@ -24,6 +24,10 @@ FIGSRC = os.path.join(TDC, "paper_plots", "figures")
 FIGDST = os.path.join(HERE, "figures")
 DATADST = os.path.join(HERE, "data")
 
+# Base data locations (same as the paper notebooks).  Override via env if needed.
+DATA_ROOT = os.environ.get("LTDE_DATA_ROOT", "/media/data/TDC")
+LCS_ROOT = os.path.join(DATA_ROOT, "standard_lcs")
+
 sys.path.insert(0, HERE)
 from figures_meta import FIGURES  # noqa: E402
 
@@ -64,9 +68,8 @@ def export_data():
     """
     os.makedirs(DATADST, exist_ok=True)
     exporters = [
-        ("lightcurves", export_lightcurves),
         ("scores", export_scores),
-        ("catalogue_stats", export_catalogue_stats),
+        ("lightcurves", export_lightcurves),
     ]
     for label, fn in exporters:
         try:
@@ -76,67 +79,133 @@ def export_data():
 
 
 # ---------------------------------------------------------------------------
-# Data exporters (phase 2).  Each writes one JSON file into ./data.
-# They read the SAME files the paper notebooks use.
+# Metric functions -- EXACT copies of paper_plots/tdc_tools.py so the browser
+# playground reproduces the paper numbers.  (chi2_offset: reduced chi^2 with a
+# free constant offset.)
 # ---------------------------------------------------------------------------
 
-def _read_lc_submission(path):
-    import pandas as pd
-    df = pd.read_csv(path)
-    return df
+def _chi2_offset(model, data, error):
+    import numpy as np
+    N = 106
+    f = len(model) / N
+    alpha = np.sum(((data - model) / error) ** 2)
+    beta = -2 * np.sum((data - model) / error ** 2)
+    gamma = np.sum(1 / error ** 2)
+    chi2 = gamma * (alpha / gamma - beta ** 2 / (4 * gamma ** 2)) / (f * N)
+    return float(chi2)
 
 
-def export_lightcurves():
-    """Export per-visit light-curve fluxes for the example systems used in
-    Fig_06-09 (good / blended / leakage / offset)."""
-    # The exact paths are defined inside the notebooks; mirror them here.
-    import pandas as pd
-    from paper_plots_paths import LC_EXAMPLES  # small helper, see below
+def _dump_json(obj, path):
+    """Write JSON that is valid for browsers: Python's json.dump emits bare
+    NaN/Infinity tokens which are NOT valid JSON and break JSON.parse()."""
+    import re
+    with open(path, "w") as fh:
+        json.dump(obj, fh)
+    with open(path) as fh:
+        txt = fh.read()
+    txt = re.sub(r"\bNaN\b", "null", txt)
+    txt = re.sub(r"\bInfinity\b", "1e308", txt)
+    txt = re.sub(r"\b-Infinity\b", "-1e308", txt)
+    with open(path, "w") as fh:
+        fh.write(txt)
 
-    out = {}
-    for key, info in LC_EXAMPLES.items():
-        df = _read_lc_submission(info["lc_csv"])
-        keep = [c for c in ("time", "flux_A", "flux_B", "flux_C", "flux_D",
-                            "flux_err_A", "flux_err_B", "flux_err_C", "flux_err_D")
-                if c in df.columns]
-        out[key] = {
-            "config": info["config"],
-            "method": info.get("method"),
-            "note": info.get("note", ""),
-            "columns": keep,
-            "data": df[keep].where(pd.notna(df[keep]), None).values.tolist(),
-        }
-    with open(os.path.join(DATADST, "lightcurves.json"), "w") as fh:
-        json.dump(out, fh)
-    print(f"[data] wrote lightcurves.json ({len(out)} examples)")
+
+# ---------------------------------------------------------------------------
+# Data exporters -- read the SAME files as the paper notebooks.
+# ---------------------------------------------------------------------------
+
+TEAMS = ["lightcurver", "starred_v1", "heidelberg", "luras_v1"]
+STARRED_TEAMS = ["starred_v1", "starred_v2"]
+GEOMETRIES = ["cross", "cusp", "fold", "double"]
+R_ES = ["07", "10", "15"]
+HOST_FLUXES = ["010", "050", "100"]
+LENS_FLUXES = ["010", "050", "100"]
 
 
 def export_scores():
-    """Export the per-image score table (chi2_offset, contamination ratios,
-    f_tot, config, method) used by Fig_10-13."""
-    from paper_plots_paths import SCORES_CSV
+    """Replicate the Fig_10/11/13 data cell: for every (team, geometry, image,
+    theta_E, host, lens) and round, compute chi2_offset of the team's submitted
+    light curve against the true one, plus f_cont and f_tot.  Written as a flat
+    table so the browser can filter/aggregate on demand."""
+    import numpy as np
     import pandas as pd
-    df = pd.read_csv(SCORES_CSV)
-    keep = [c for c in ("config", "method", "image", "chi2_offset", "f_cont",
-                        "f_tot", "theta_E", "host_flux", "lens_flux") if c in df.columns]
-    with open(os.path.join(DATADST, "scores.json"), "w") as fh:
-        json.dump({"columns": keep,
-                   "data": df[keep].where(pd.notna(df[keep]), None).values.tolist()}, fh)
-    print(f"[data] wrote scores.json ({len(df)} rows)")
+
+    rows = []
+    for team in TEAMS + STARRED_TEAMS:
+        for geometry in GEOMETRIES:
+            images = ["A", "B"] if geometry == "double" else ["A", "B", "C", "D"]
+            for R_E in R_ES:
+                for host_flux in HOST_FLUXES:
+                    for lens_flux in LENS_FLUXES:
+                        filename = f"{geometry}_{R_E}_{host_flux}_{lens_flux}.csv"
+                        true_path = os.path.join(LCS_ROOT, "true", filename)
+                        if not os.path.exists(true_path):
+                            continue
+                        true_lc = pd.read_csv(true_path)
+                        if team == "heidelberg":
+                            true_lc["time"] = np.round(true_lc["time"], 3)
+
+                        # per-image contamination + total-flux metrics (true LC)
+                        f_cont, f_tot = {}, {}
+                        for image in images:
+                            bg = true_lc[f"background_{image}"]
+                            fl = true_lc[f"flux_{image}"]
+                            f_cont[image] = float(1 - np.median(fl / (bg + fl)))
+                            f_tot[image] = float(np.median(bg))
+
+                        for rnd in ("round1", "round2"):
+                            sub_path = os.path.join(LCS_ROOT, team, rnd, filename)
+                            if not os.path.exists(sub_path):
+                                continue
+                            goodie_lc = pd.read_csv(sub_path)
+                            aux = pd.merge(true_lc, goodie_lc, on="time")
+                            for image in images:
+                                fx = f"flux_{image}_x"      # true (left df)
+                                fy = f"flux_{image}_y"      # team (right df)
+                                ey = f"flux_{image}_err_y"  # team error (matches notebook)
+                                if not ({fx, fy, ey} <= set(aux.columns)):
+                                    continue
+                                chi2 = _chi2_offset(aux[fx], aux[fy], aux[ey])
+                                rows.append({
+                                    "team": team, "geometry": geometry, "image": image,
+                                    "theta_E": R_E, "host_flux": host_flux, "lens_flux": lens_flux,
+                                    "round": rnd, "chi2_offset": chi2,
+                                    "f_cont": f_cont[image], "f_tot": f_tot[image],
+                                })
+
+    cols = ["team", "geometry", "image", "theta_E", "host_flux", "lens_flux",
+            "round", "chi2_offset", "f_cont", "f_tot"]
+    out = {"columns": cols, "rows": rows,
+           "teams": TEAMS + STARRED_TEAMS, "geometries": GEOMETRIES}
+    _dump_json(out, os.path.join(DATADST, "scores.json"))
+    print(f"[data] wrote scores.json ({len(rows)} rows)")
 
 
-def export_catalogue_stats():
-    """Export the small aggregate stats behind Fig_03 (catalogue distributions)."""
-    from paper_plots_paths import CATALOGUE_CSV
+def export_lightcurves():
+    """Export the per-visit light curves for a few representative systems so the
+    playground can show interactive time-series (image A/B/C/D toggles).  We pick
+    one config/theta_E/host/lens per geometry to keep the file small."""
     import pandas as pd
-    df = pd.read_csv(CATALOGUE_CSV)
-    # keep only a handful of numeric columns to stay small
-    num = df.select_dtypes("number").columns[:12].tolist()
-    with open(os.path.join(DATADST, "catalogue_stats.json"), "w") as fh:
-        json.dump({"columns": num,
-                   "data": df[num].where(pd.notna(df[num]), None).values.tolist(),
-                   "n_rows": int(len(df))}, fh)
-    print(f"[data] wrote catalogue_stats.json ({len(df)} rows)")
+
+    picks = [("cross", "10", "050", "050"), ("cusp", "10", "050", "050"),
+             ("fold", "10", "050", "050"), ("double", "10", "050", "050")]
+    out = {}
+    for geometry, R_E, host, lens in picks:
+        filename = f"{geometry}_{R_E}_{host}_{lens}.csv"
+        true_path = os.path.join(LCS_ROOT, "true", filename)
+        if not os.path.exists(true_path):
+            continue
+        df = pd.read_csv(true_path)
+        images = ["A", "B"] if geometry == "double" else ["A", "B", "C", "D"]
+        cols = ["time"] + [f"flux_{i}" for i in images] + [f"flux_err_{i}" for i in images]
+        cols = [c for c in cols if c in df.columns]
+        out[filename] = {
+            "geometry": geometry, "theta_E": R_E, "host_flux": host, "lens_flux": lens,
+            "columns": cols,
+            "data": df[cols].where(pd.notna(df[cols]), None).values.tolist(),
+        }
+    _dump_json(out, os.path.join(DATADST, "lightcurves.json"))
+    print(f"[data] wrote lightcurves.json ({len(out)} systems)")
 
 
 if __name__ == "__main__":
