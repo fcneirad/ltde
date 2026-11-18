@@ -56,6 +56,13 @@
   "interactive": false
  },
  {
+  "name": "seeing_effect_v2",
+  "group": "Observations",
+  "title": "Effect of seeing on light-curve recovery",
+  "caption": "Per-epoch $\\chi^2_{\\rm offset}$ as a function of the atmospheric seeing (FWHM) for the four lens configurations (rows) and two extreme configurations per geometry: the hardest ($\\theta_E=0.7''$, lens/host 100%) and the easiest ($\\theta_E=1.5''$, lens/host 10%). Each point is one epoch of one image; the solid line and shaded band show the binned median (8 equal-width seeing bins) and its 68% bootstrap confidence interval per method. The dotted line marks $\\chi^2_{\\rm offset}=1$ (recovery within the noise).",
+  "interactive": true
+ },
+ {
   "name": "lc_good",
   "group": "Light curves",
   "title": "Good light curve",

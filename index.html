@@ -47,7 +47,11 @@
       <label>Plot:
         <select id="pg-plot">
           <option value="scores_scatter">Scores: &chi;&sup2;<sub>offset</sub> vs contamination / flux</option>
-          <option value="lc_timeseries">Light curve (example systems)</option>
+          <option value="lc_timeseries">Light curves (any system, any team)</option>
+          <option value="seeing_trend">&chi;&sup2;<sub>offset</sub> vs seeing (any config)</option>
+          <option value="chi2_heatmap">&chi;&sup2;<sub>offset</sub> heatmap over &theta;<sub>E</sub> &times; flux grid</option>
+          <option value="geom_box">&chi;&sup2;<sub>offset</sub> distribution by geometry</option>
+          <option value="fcont_thetae">f<sub>cont</sub> vs &theta;<sub>E</sub></option>
         </select>
       </label>
 
@@ -94,7 +98,121 @@
       <!-- light-curve controls -->
       <span id="pg-lc-controls" class="toolbar-group" hidden>
         <label>System:
-          <select id="pg-system"></select>
+          <select id="pg-lc-system"></select>
+        </label>
+        <label>Teams to overlay:
+          <span class="check-row">
+            <label><input type="checkbox" class="lc-team" value="lightcurver">LightCurver</label>
+            <label><input type="checkbox" class="lc-team" value="starred_v1" checked>STARRED (v1)</label>
+            <label><input type="checkbox" class="lc-team" value="heidelberg">Heidelberg</label>
+            <label><input type="checkbox" class="lc-team" value="luras_v1">LURAS (v1)</label>
+            <label><input type="checkbox" class="lc-team" value="starred_v2">STARRED (v2)</label>
+          </span>
+        </label>
+        <label>Images:
+          <span class="check-row">
+            <label><input type="checkbox" class="lc-img" value="A" checked>A</label>
+            <label><input type="checkbox" class="lc-img" value="B" checked>B</label>
+            <label><input type="checkbox" class="lc-img" value="C" checked>C</label>
+            <label><input type="checkbox" class="lc-img" value="D" checked>D</label>
+          </span>
+        </label>
+      </span>
+
+      <!-- seeing-trend controls -->
+      <span id="pg-seeing-controls" class="toolbar-group" hidden>
+        <label>System:
+          <select id="pg-seeing-system"></select>
+        </label>
+        <label>Teams:
+          <select id="pg-seeing-teams" multiple size="4">
+            <option value="lightcurver" selected>LightCurver</option>
+            <option value="starred_v1" selected>STARRED (v1)</option>
+            <option value="heidelberg" selected>Heidelberg</option>
+            <option value="luras_v1" selected>LURAS (v1)</option>
+          </select>
+        </label>
+        <label>Images:
+          <select id="pg-seeing-images" multiple size="4">
+            <option value="A" selected>A</option>
+            <option value="B" selected>B</option>
+            <option value="C" selected>C</option>
+            <option value="D" selected>D</option>
+          </select>
+        </label>
+      </span>
+
+      <!-- heatmap controls -->
+      <span id="pg-heatmap-controls" class="toolbar-group" hidden>
+        <label>Geometry:
+          <select id="pg-hm-geometry">
+            <option value="cross" selected>cross</option>
+            <option value="cusp">cusp</option>
+            <option value="fold">fold</option>
+            <option value="double">double</option>
+          </select>
+        </label>
+        <label>Round:
+          <select id="pg-hm-round">
+            <option value="round1" selected>round 1</option>
+            <option value="round2">round 2</option>
+          </select>
+        </label>
+        <label>Image:
+          <select id="pg-hm-image">
+            <option value="A" selected>A (brightest)</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+        </label>
+      </span>
+
+      <!-- box-by-geometry controls -->
+      <span id="pg-box-controls" class="toolbar-group" hidden>
+        <label>Teams:
+          <select id="pg-box-teams" multiple size="4">
+            <option value="lightcurver" selected>LightCurver</option>
+            <option value="starred_v1" selected>STARRED (v1)</option>
+            <option value="heidelberg" selected>Heidelberg</option>
+            <option value="luras_v1" selected>LURAS (v1)</option>
+          </select>
+        </label>
+        <label>Round:
+          <select id="pg-box-round">
+            <option value="round1" selected>round 1</option>
+            <option value="round2">round 2</option>
+          </select>
+        </label>
+        <label>Image:
+          <select id="pg-box-image">
+            <option value="A" selected>A (brightest)</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
+        </label>
+      </span>
+
+      <!-- f_cont vs theta_E controls -->
+      <!-- f_cont is a property of the true system, so it does not depend on
+           team or round -->
+      <span id="pg-fcont-controls" class="toolbar-group" hidden>
+        <label>Geometries:
+          <select id="pg-fc-config" multiple size="4">
+            <option value="cross" selected>cross</option>
+            <option value="cusp" selected>cusp</option>
+            <option value="fold" selected>fold</option>
+            <option value="double" selected>double</option>
+          </select>
+        </label>
+        <label>Image:
+          <select id="pg-fc-image">
+            <option value="A" selected>A (brightest)</option>
+            <option value="B">B</option>
+            <option value="C">C</option>
+            <option value="D">D</option>
+          </select>
         </label>
       </span>
 

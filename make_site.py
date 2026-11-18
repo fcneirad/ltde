@@ -20,7 +20,8 @@ import sys
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TDC = os.path.dirname(HERE)                      # .../TDC
-FIGSRC = os.path.join(TDC, "paper_plots", "figures")
+PAPER_PLOTS = os.path.join(TDC, "paper_plots")   # notebooks + shared helpers
+FIGSRC = os.path.join(PAPER_PLOTS, "figures")
 FIGDST = os.path.join(HERE, "figures")
 DATADST = os.path.join(HERE, "data")
 
@@ -29,6 +30,7 @@ DATA_ROOT = os.environ.get("LTDE_DATA_ROOT", "/media/data/TDC")
 LCS_ROOT = os.path.join(DATA_ROOT, "standard_lcs")
 
 sys.path.insert(0, HERE)
+sys.path.insert(0, PAPER_PLOTS)   # for lc_plot (the paper's standardized LC pipeline)
 from figures_meta import FIGURES  # noqa: E402
 
 
@@ -182,30 +184,134 @@ def export_scores():
 
 
 def export_lightcurves():
-    """Export the per-visit light curves for a few representative systems so the
-    playground can show interactive time-series (image A/B/C/D toggles).  We pick
-    one config/theta_E/host/lens per geometry to keep the file small."""
-    import pandas as pd
+    """Export per-system light curves for ALL 108 systems, one JSON file each
+    (data/lcs/<system>.json), so the browser can lazy-load any system on demand.
 
-    picks = [("cross", "10", "050", "050"), ("cusp", "10", "050", "050"),
-             ("fold", "10", "050", "050"), ("double", "10", "050", "050")]
-    out = {}
-    for geometry, R_E, host, lens in picks:
-        filename = f"{geometry}_{R_E}_{host}_{lens}.csv"
-        true_path = os.path.join(LCS_ROOT, "true", filename)
-        if not os.path.exists(true_path):
+    Data come from lc_plot.load_lc_data -- the SAME standardized pipeline as the
+    paper's Fig_10-13 and Fig_seeing code: the true catalogue is built from
+    catalogues/sys_catalogue.csv (scaled by image magnitudes, relabelled so A =
+    brightest) and each team's submission is normalised to the same A..D
+    convention.  Reading standard_lcs/true/*.csv directly would mislabel images
+    (e.g. B/C are swapped for some systems).
+
+    Each file contains, per source ('true' + 5 teams):
+      time[], fwhm[] (true only), and mag_<img> / mag_<img>_err arrays for the
+      images that exist in that geometry (A..D, or A/B for double).
+    Plus precomputed per-epoch chi2_offset pairs [fwhm, chi2] per team+image
+    (same definition as Fig_seeing: squared residual after removing the best-fit
+    global constant offset), so the 'seeing trend' playground plot needs no
+    client-side fitting.
+
+    Magnitudes are used (not fluxes) to match the paper's light-curve figures.
+    """
+    import numpy as np
+    import pandas as pd
+    from lc_plot import load_lc_data, _images_for
+
+    lcs_dir = os.path.join(DATADST, "lcs")
+    os.makedirs(lcs_dir, exist_ok=True)
+    # remove stale per-system files from previous builds
+    for fn in os.listdir(lcs_dir):
+        if fn.endswith(".json"):
+            os.remove(os.path.join(lcs_dir, fn))
+
+    n_written = 0
+    for geometry in GEOMETRIES:
+        images = _images_for(geometry)
+        for R_E in R_ES:
+            for host_flux in HOST_FLUXES:
+                for lens_flux in LENS_FLUXES:
+                    key = f"{geometry}_{R_E}_{host_flux}_{lens_flux}"
+                    try:
+                        true_d = load_lc_data("lightcurver", geometry, R_E, host_flux, lens_flux)
+                    except Exception as e:  # noqa: BLE001 - skip missing system
+                        print(f"[data] SKIPPED {key}: {type(e).__name__}: {e}")
+                        continue
+                    sysc = true_d["sys_catalogue"]
+
+                    out = {
+                        "geometry": geometry, "theta_E": R_E,
+                        "host_flux": host_flux, "lens_flux": lens_flux,
+                        "images": images,
+                        "fwhm": sysc["fwhm"].round(4).tolist(),
+                        "sources": {},
+                    }
+
+                    def _mag_block(df):
+                        block = {"time": df["time"].round(6).tolist()}
+                        for img in images:
+                            mcol, ecol = f"mag_{img}", f"mag_{img}_err"
+                            if mcol not in df.columns:
+                                continue
+                            block[img] = {
+                                "mag": [None if v != v else round(float(v), 4) for v in df[mcol]],
+                                "err": ([None if v != v else round(float(v), 5) for v in df[ecol]]
+                                        if ecol in df.columns else None),
+                            }
+                        return block
+
+                    out["sources"]["true"] = _mag_block(sysc)
+
+                    # per-epoch chi2_offset pairs (Fig_seeing definition), per image
+                    epoch_pairs = {}
+                    for team in TEAMS + STARRED_TEAMS:
+                        rnd = "round2" if team == "starred_v2" else "round1"
+                        sub_path = os.path.join(LCS_ROOT, team, rnd, key + ".csv")
+                        if not os.path.exists(sub_path):
+                            continue
+                        try:
+                            d = load_lc_data(team, geometry, R_E, host_flux, lens_flux, rnd=rnd)
+                        except Exception as e:  # noqa: BLE001
+                            print(f"[data] SKIPPED {key}/{team}: {type(e).__name__}: {e}")
+                            continue
+                        good = d["goodie_lc"]
+                        out["sources"][team] = _mag_block(good)
+
+                        if team == "heidelberg":
+                            sysc_t = sysc.copy()
+                            sysc_t["time"] = np.round(sysc_t["time"], 3)
+                            m = pd.merge(sysc_t, good, on="time", suffixes=("_t", "_s"))
+                        else:
+                            m = pd.merge(sysc, good, on="time", suffixes=("_t", "_s"))
+                        per_img = {}
+                        for img in images:
+                            model = m[f"flux_{img}_t"].to_numpy()
+                            data = m[f"flux_{img}_s"].to_numpy()
+                            if f"flux_err_{img}" in m.columns and m[f"flux_err_{img}"].notna().any():
+                                err = m[f"flux_err_{img}"].to_numpy()
+                            else:  # luras_v1 uses the suffix convention
+                                err = m[f"flux_{img}_err_s"].to_numpy()
+                            ok = (np.isfinite(model) & np.isfinite(data)
+                                  & np.isfinite(err) & (err > 0))
+                            if ok.sum() < 3:
+                                continue
+                            model, data, err = model[ok], data[ok], err[ok]
+                            fw = m["fwhm"].to_numpy()[ok]
+                            beta = -2.0 * np.sum((data - model) / err**2)
+                            gamma = np.sum(1.0 / err**2)
+                            cstar = -beta / (2.0 * gamma)
+                            per = ((data - model - cstar) / err)**2
+                            per_img[img] = [[round(float(f), 4), round(float(c), 4)]
+                                            for f, c in zip(fw, per)]
+                        if per_img:
+                            epoch_pairs[team] = per_img
+
+                    out["epoch_chi2"] = epoch_pairs
+                    _dump_json(out, os.path.join(lcs_dir, key + ".json"))
+                    n_written += 1
+
+    # index file so the browser can list all systems without fetching each one
+    index = []
+    for fn in sorted(os.listdir(lcs_dir)):
+        if not fn.endswith(".json"):
             continue
-        df = pd.read_csv(true_path)
-        images = ["A", "B"] if geometry == "double" else ["A", "B", "C", "D"]
-        cols = ["time"] + [f"flux_{i}" for i in images] + [f"flux_err_{i}" for i in images]
-        cols = [c for c in cols if c in df.columns]
-        out[filename] = {
-            "geometry": geometry, "theta_E": R_E, "host_flux": host, "lens_flux": lens,
-            "columns": cols,
-            "data": df[cols].where(pd.notna(df[cols]), None).values.tolist(),
-        }
-    _dump_json(out, os.path.join(DATADST, "lightcurves.json"))
-    print(f"[data] wrote lightcurves.json ({len(out)} systems)")
+        with open(os.path.join(lcs_dir, fn)) as fh:
+            d = json.load(fh)
+        index.append({"key": fn[:-5], "geometry": d["geometry"], "theta_E": d["theta_E"],
+                      "host_flux": d["host_flux"], "lens_flux": d["lens_flux"],
+                      "images": d["images"]})
+    _dump_json(index, os.path.join(DATADST, "lc_index.json"))
+    print(f"[data] wrote {n_written} per-system LC files -> {lcs_dir} (+ lc_index.json)")
 
 
 if __name__ == "__main__":

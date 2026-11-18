@@ -40,6 +40,14 @@ FIGURES = [
     # --- Section: observations --------------------------------------------
     dict(name="fwhm_vs_seeing", group="Observations", title="Atmospheric conditions",
          caption="Distribution of the atmospheric conditions for each visit."),
+    dict(name="seeing_effect_v2", group="Observations", title="Effect of seeing on light-curve recovery",
+         caption=r"Per-epoch $\chi^2_{\rm offset}$ as a function of the atmospheric seeing "
+                 r"(FWHM) for the four lens configurations (rows) and two extreme "
+                 r"configurations per geometry: the hardest ($\theta_E=0.7''$, lens/host 100%) "
+                 r"and the easiest ($\theta_E=1.5''$, lens/host 10%). Each point is one epoch of "
+                 r"one image; the solid line and shaded band show the binned median (8 equal-width "
+                 r"seeing bins) and its 68% bootstrap confidence interval per method. The dotted "
+                 r"line marks $\chi^2_{\rm offset}=1$ (recovery within the noise).", interactive=True),
 
     # --- Section: light curves --------------------------------------------
     dict(name="lc_good", group="Light curves", title="Good light curve",
